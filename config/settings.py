@@ -11,9 +11,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 SITE_DOMAIN = os.environ.get('SITE_DOMAIN')
-SITE_URL = f'https://{SITE_DOMAIN}'
+SITE_URL = f'https://{SITE_DOMAIN}' if SITE_DOMAIN else 'http://127.0.0.1:8000'
 SITE_IP = os.environ.get('SITE_IP')
-ALLOWED_HOSTS = [SITE_DOMAIN, SITE_IP, '127.0.0.1', '0.0.0.0']
+ALLOWED_HOSTS = [h for h in [SITE_DOMAIN, SITE_IP, '127.0.0.1', '0.0.0.0', 'localhost', '.onrender.com'] if h]
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 30
 SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin-allow-popups'
 
@@ -36,12 +36,19 @@ for package in LESS_LOG_PACKAGES:
     logging.getLogger(package).setLevel(logging.WARNING)
 
 CSRF_TRUSTED_ORIGINS = [
-    f'https://{SITE_DOMAIN}',
-    f'http://{SITE_DOMAIN}',
-    f'http://{SITE_IP}',
-    f'https://{SITE_IP}',
     'http://127.0.0.1:8000',
+    'http://localhost:8000',
 ]
+if SITE_DOMAIN:
+    CSRF_TRUSTED_ORIGINS.extend([
+        f'https://{SITE_DOMAIN}',
+        f'http://{SITE_DOMAIN}',
+    ])
+if SITE_IP:
+    CSRF_TRUSTED_ORIGINS.extend([
+        f'https://{SITE_IP}',
+        f'http://{SITE_IP}',
+    ])
 INSTALLED_APPS = [
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -161,17 +168,41 @@ if DEBUG:
         }
     }
 else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DB_NAME'),
-            'USER': os.environ.get('DB_USER'),
-            'PASSWORD': os.environ.get('DB_PASSWORD'),
-            'HOST': os.environ.get('DB_HOST'),
-            'PORT': os.environ.get('DB_PORT'),
-            'CONN_MAX_AGE': 60,
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url:
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(db_url)
+        query_params = parse_qs(parsed.query)
+        sslmode = query_params.get('sslmode', [os.environ.get('DB_SSLMODE', 'require')])[0]
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': parsed.path.lstrip('/'),
+                'USER': parsed.username,
+                'PASSWORD': parsed.password,
+                'HOST': parsed.hostname,
+                'PORT': parsed.port or 5432,
+                'CONN_MAX_AGE': 60,
+                'OPTIONS': {
+                    'sslmode': sslmode,
+                }
+            }
         }
-    }
+    else:
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': os.environ.get('DB_NAME'),
+                'USER': os.environ.get('DB_USER'),
+                'PASSWORD': os.environ.get('DB_PASSWORD'),
+                'HOST': os.environ.get('DB_HOST'),
+                'PORT': os.environ.get('DB_PORT', 5432),
+                'CONN_MAX_AGE': 60,
+                'OPTIONS': {
+                    'sslmode': os.environ.get('DB_SSLMODE', 'require'),
+                }
+            }
+        }
 
 
 AUTH_PASSWORD_VALIDATORS = [
